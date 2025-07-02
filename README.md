@@ -4,8 +4,8 @@ Google Scholar'dan akademik makalelerin PDF'lerini toplu olarak indiren Python s
 
 ## Özellikler
 
-- 10 farklı Google Scholar aramasını sırayla işler
-- Her arama için ayrı klasör oluşturur
+- Google Scholar URL'lerini sırayla işler
+- Tüm PDF'leri tek klasöre indirir
 - Otomatik PDF arama ve indirme
 - İlerleme çubuğu ile görsel geri bildirim
 
@@ -16,7 +16,16 @@ Google Scholar'dan akademik makalelerin PDF'lerini toplu olarak indiren Python s
 pip install -r requirements.txt
 ```
 
-2. Scripti çalıştırın:
+2. `pdf_indir.py` dosyasındaki `SCHOLAR_URLS` listesine URL'lerinizi ekleyin:
+```python
+SCHOLAR_URLS = [
+    "https://scholar.google.com.tr/scholar?hl=tr&as_sdt=0,5&as_vis=1&q=ARAMA_KELIMELERI",
+    "https://scholar.google.com.tr/scholar?hl=tr&as_sdt=0,5&as_vis=1&q=DIGER_ARAMA",
+    # Daha fazla URL ekleyebilirsiniz...
+]
+```
+
+3. Scripti çalıştırın:
 ```bash
 python pdf_indir.py
 ```
@@ -24,25 +33,19 @@ python pdf_indir.py
 ## Kullanım
 
 Script çalıştırıldığında:
-- 10 farklı sağlık konusunda Google Scholar araması yapar
-- Her arama için ayrı klasör oluşturur
-- PDF'leri otomatik olarak indirir ve numaralandırır
+- Eklediğiniz URL'leri sırayla işler
+- Tüm PDF'leri tek klasöre indirir
+- PDF'leri sırayla numaralandırır
 
 ## İndirme Dizini
 
 PDF'ler şu dizine indirilir:
 ```
-C:\Users\Administrator\Desktop\TEKNOFEST\akademikmakaleler\
-├── beslenme_kilo_verme/
-├── spor_egzersiz/
-├── psikoloji_motivasyon/
-├── saglik_beslenme/
-├── teknoloji_saglik/
-├── ilac_tedavi/
-├── cerrahi_ameliyat/
-├── pediatri_cocuk/
-├── kardiyoloji_kalp/
-└── noroloji_beyin/
+C:\Users\KLASÖRÜNÜZ
+├── makale_1.pdf
+├── makale_2.pdf
+├── makale_3.pdf
+└── ...
 ```
 
 ## Gereksinimler
