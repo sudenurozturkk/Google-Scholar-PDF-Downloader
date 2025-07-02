@@ -1,148 +1,129 @@
 """
-Google Scholar'dan akademik makalelerin PDF'lerini toplu olarak indiren script.
+Bir web sayfasındaki tüm PDF dosyalarını toplu olarak indiren script.
 Kullanım: python pdf_indir.py
+PDF'ler, scriptin bulunduğu dizinde 'indirilen_pdfler' klasörüne kaydedilir.
+Zaten indirilmiş PDF'leri atlar.
 """
 import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from tqdm import tqdm
-import time
+import re
 
-# Google Scholar arama URL'leri - Buraya kendi URL'lerinizi ekleyin
-SCHOLAR_URLS = [
-    # Örnek: "https://scholar.google.com.tr/scholar?hl=tr&as_sdt=0,5&as_vis=1&q=ARAMA_KELIMELERI"
-    # Buraya kendi URL'lerinizi ekleyin
+# Hedef site
+URL = "https://hsgm.saglik.gov.tr/tr/dokumanlar-6.html"
+KLASOR = "indirilen_pdfler"
+
+# Ek PDF linkleri
+EK_LINKLER = [
+    "https://tkd.org.tr/TKDData/Uploads/files/hipertansiyonda-beslenme.pdf?hl=tr-TR",
+    "https://temd.org.tr/Assets/docs/DiyabetveSaglikliBeslenmeKitapcigi.pdf?hl=tr-TR",
+    "https://dergipark.org.tr/en/download/article-file/988815?hl=tr-TR",
+    "https://www.sporhekimligi.com/Metablik_sendrom_ve_egzersiz.pdf?hl=tr-TR",
+    "https://dergipark.org.tr/tr/download/article-file/382638?hl=tr-TR",
+    "https://dergipark.org.tr/en/download/article-file/1038020?hl=tr-TR",
+    "https://dergipark.org.tr/en/download/article-file/3288900?hl=tr-TR",
+    "https://www.medipol.edu.tr/sites/default/files/2022-06/web.RAMAZAN%20REHBER-f4e69932-d956-4a5d-a8cf-36a762e3e76a.pdf",
+    "https://openknowledge.fao.org/server/api/core/bitstreams/bf234a5b-2b30-4afa-94d7-e14997c06b68/content",
+    "https://tekinakpolat.com/wp-content/uploads/2017/12/turkiye-beslenme-rehberi.pdf",
+    "https://meslek.meb.gov.tr/upload/dersmateryali/pdf/YIH2024DYH111209.pdf",
+    "https://www.beykoz.edu.tr/content/editor/5e67287487405_beykozuniversitesi-vucuttipi-002.pdf",
+    "https://pedider.org.tr/pdf/1.pdf"
 ]
 
-# Ayarlar
-DOWNLOAD_FOLDER = r"C:\KLASÖRÜNÜZ"
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-MAX_PDFS_PER_SEARCH = 20
-DELAY_BETWEEN_DOWNLOADS = 1
-DELAY_BETWEEN_SEARCHES = 3
+def dosya_adi_temizle(url):
+    """URL'den güvenli dosya adı oluştur"""
+    parsed = urlparse(url)
+    dosya_adi = os.path.basename(parsed.path)
+    
+    # Eğer dosya adı yoksa veya .pdf ile bitmiyorsa, URL'den benzersiz bir ad oluştur
+    if not dosya_adi or not dosya_adi.lower().endswith('.pdf'):
+        # URL'den hash benzeri bir ad oluştur
+        url_hash = str(abs(hash(url)))[:8]
+        dosya_adi = f"dokuman_{url_hash}.pdf"
+    
+    # Dosya adındaki zararlı karakterleri temizle
+    dosya_adi = re.sub(r'[<>:"/\\|?*]', '_', dosya_adi)
+    return dosya_adi
 
-def pdf_indir_tek_arama(scholar_url, arama_no):
-    """Tek bir Google Scholar aramasından PDF indirir"""
-    print(f"\n🔍 Arama {arama_no}")
-    
-    headers = {'User-Agent': USER_AGENT}
-    
+def pdf_indir(url, dosya_yolu):
+    """Tek PDF dosyasını indir"""
     try:
-        print("Google Scholar taranıyor...")
-        response = requests.get(scholar_url, headers=headers, timeout=30)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, "html.parser")
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        r = requests.get(url, stream=True, timeout=30, headers=headers)
+        r.raise_for_status()
         
-        pdf_linkleri = set()
-        
-        # PDF linklerini bul
-        for link in soup.find_all("a", href=True):
-            href = link["href"]
-            link_text = link.get_text().strip()
-            
-            if "[PDF]" in link_text or "PDF" in link_text:
-                if href.startswith("/"):
-                    pdf_url = urljoin("https://scholar.google.com", href)
-                    pdf_linkleri.add(pdf_url)
-                elif href.startswith("http"):
-                    if href.lower().endswith(".pdf") or "pdf" in href.lower():
-                        pdf_linkleri.add(href)
-        
-        # Div içindeki PDF linklerini de ara
-        for div in soup.find_all("div", class_="gs_or_ggsm"):
-            for link in div.find_all("a", href=True):
-                href = link["href"]
-                if href.startswith("/"):
-                    pdf_url = urljoin("https://scholar.google.com", href)
-                    pdf_linkleri.add(pdf_url)
-                elif href.startswith("http") and ("pdf" in href.lower() or href.lower().endswith(".pdf")):
-                    pdf_linkleri.add(href)
-        
-        pdf_linkleri = list(pdf_linkleri)[:MAX_PDFS_PER_SEARCH]
-        
-        print(f"📄 {len(pdf_linkleri)} adet PDF linki bulundu. İndiriliyor...")
-        
-        if len(pdf_linkleri) == 0:
-            print("❌ PDF linki bulunamadı.")
-            return 0
-        
-        basarili_indirilen = 0
-        for i, pdf_url in enumerate(tqdm(pdf_linkleri, desc=f"İndiriliyor (Arama {arama_no})")):
-            try:
-                # Basit dosya adı: makale_sayi.pdf
-                dosya_adi = os.path.join(DOWNLOAD_FOLDER, f"makale_{i + 1}.pdf")
-                
-                r = requests.get(pdf_url, headers=headers, stream=True, timeout=30)
-                r.raise_for_status()
-                
-                content_type = r.headers.get('content-type', '').lower()
-                if 'pdf' not in content_type and not pdf_url.lower().endswith('.pdf'):
-                    continue
-                    
-                with open(dosya_adi, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                
-                basarili_indirilen += 1
-                time.sleep(DELAY_BETWEEN_DOWNLOADS)
-                
-            except Exception as e:
-                print(f"❌ Hata: {pdf_url} -> {e}")
-        
-        print(f"✅ Arama {arama_no}: {basarili_indirilen}/{len(pdf_linkleri)} PDF başarıyla indirildi.")
-        return basarili_indirilen
-        
+        with open(dosya_yolu, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        return True
     except Exception as e:
-        print(f"❌ Arama hatası ({arama_no}): {e}")
-        return 0
+        print(f"Hata: {url} -> {e}")
+        return False
 
-def main():
-    """Ana fonksiyon - tüm aramaları sırayla işler"""
-    if not SCHOLAR_URLS:
-        print("❌ Hata: SCHOLAR_URLS listesi boş!")
-        print("Lütfen pdf_indir.py dosyasındaki SCHOLAR_URLS listesine URL'lerinizi ekleyin.")
-        return
-    
-    print("🚀 PDF İndirici Başlatılıyor...")
-    print(f"📂 İndirme dizini: {DOWNLOAD_FOLDER}")
-    print(f"🔍 Toplam {len(SCHOLAR_URLS)} arama işlenecek")
-    print("=" * 50)
-    
-    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-    
-    toplam_indirilen = 0
-    basarili_aramalar = 0
-    
-    for i, scholar_url in enumerate(SCHOLAR_URLS, 1):
-        print(f"\n{'='*20} ARAMA {i}/{len(SCHOLAR_URLS)} {'='*20}")
-        
-        try:
-            indirilen_sayi = pdf_indir_tek_arama(scholar_url, i)
-            toplam_indirilen += indirilen_sayi
-            
-            if indirilen_sayi > 0:
-                basarili_aramalar += 1
-            
-            if i < len(SCHOLAR_URLS):
-                print(f"⏳ {DELAY_BETWEEN_SEARCHES} saniye bekleniyor...")
-                time.sleep(DELAY_BETWEEN_SEARCHES)
-                
-        except KeyboardInterrupt:
-            print("\n⚠️ Kullanıcı tarafından durduruldu.")
-            break
-        except Exception as e:
-            print(f"❌ Beklenmeyen hata: {e}")
-            continue
-    
-    print(f"\n{'='*50}")
-    print("📊 İNDİRME ÖZETİ")
-    print(f"{'='*50}")
-    print(f"✅ Başarılı aramalar: {basarili_aramalar}/{len(SCHOLAR_URLS)}")
-    print(f"📄 Toplam indirilen PDF: {toplam_indirilen}")
-    print(f"📂 İndirme dizini: {DOWNLOAD_FOLDER}")
-    print("🎉 İşlem tamamlandı!")
+# Klasör oluştur
+os.makedirs(KLASOR, exist_ok=True)
 
-if __name__ == "__main__":
-    main() 
+# Zaten indirilmiş dosyaları kontrol et
+mevcut_dosyalar = set(os.listdir(KLASOR))
+print(f"Klasörde {len(mevcut_dosyalar)} dosya mevcut.")
+
+# Siteyi çek
+print("Site taranıyor...")
+try:
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    response = requests.get(URL, headers=headers, timeout=30)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.content, "html.parser")
+
+    # PDF linklerini bul
+    pdf_linkleri = set()
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if href.lower().endswith(".pdf"):
+            tam_link = urljoin(URL, href)
+            pdf_linkleri.add(tam_link)
+
+    print(f"Siteden {len(pdf_linkleri)} adet PDF bulundu.")
+    
+except Exception as e:
+    print(f"Site tarama hatası: {e}")
+    pdf_linkleri = set()
+
+# Ek linkleri ekle
+pdf_linkleri.update(EK_LINKLER)
+print(f"Toplam {len(pdf_linkleri)} adet PDF indirilecek.")
+
+# PDF'leri indir
+indirilen_sayi = 0
+atlanan_sayi = 0
+
+for pdf_url in tqdm(pdf_linkleri, desc="PDF'ler indiriliyor"):
+    dosya_adi = dosya_adi_temizle(pdf_url)
+    dosya_yolu = os.path.join(KLASOR, dosya_adi)
+    
+    # Dosya zaten mevcutsa atla
+    if dosya_adi in mevcut_dosyalar:
+        print(f"Atlandı (zaten mevcut): {dosya_adi}")
+        atlanan_sayi += 1
+        continue
+    
+    # PDF'yi indir
+    if pdf_indir(pdf_url, dosya_yolu):
+        indirilen_sayi += 1
+        mevcut_dosyalar.add(dosya_adi)  # Listede güncelle
+    else:
+        # Başarısız indirme durumunda dosyayı sil
+        if os.path.exists(dosya_yolu):
+            os.remove(dosya_yolu)
+
+print(f"\nİşlem tamamlandı!")
+print(f"Yeni indirilen: {indirilen_sayi}")
+print(f"Atlanan (mevcut): {atlanan_sayi}")
+print(f"Toplam dosya: {len(mevcut_dosyalar)}")
